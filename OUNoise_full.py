@@ -7,6 +7,7 @@ class OUNoise:
 
     def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
 #    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.8):
+#    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.05):
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.theta = theta
@@ -18,7 +19,8 @@ class OUNoise:
     def reset(self):
         """Reset the internal state (= noise) to mean (mu)."""
         self.state = copy.copy(self.mu)
-        print('OUNoise.reset, mu, sigma, theta, len:',self.mu, self.sigma, self.theta, len(self.state))
+#        print('OUNoise.reset, mu, sigma, theta, len:',self.mu, self.sigma, self.theta, len(self.state))
+#        print('OUNoise.reset, mu, sigma, theta:',self.mu[0], self.sigma, self.theta)
 
     def sample(self):
         """Update internal state and return it as a noise sample."""
@@ -30,6 +32,6 @@ class OUNoise:
 #   use the 
         dx = self.theta * (self.mu - x) + self.sigma * np.random.standard_normal(self.size)
         self.state = x + dx
-        print('OUNoise.sample, len s, x, dx, sigma:',len(self.state),len(x),len(dx),self.sigma)
+#        print('OUNoise.sample, len s, x, dx, sigma:',len(self.state),len(x),len(dx),self.sigma)
         return self.state
 

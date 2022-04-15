@@ -70,9 +70,14 @@ We have provided the Tennis.exe, Tennis_Windows_x86_64 and the python directory 
 
 # My model description
 
-Briefly my model is strongly based on the Udacity  MADDPG (Multi-Agent Deep Deterministic Policy Gradient) lessons in the multi-agent actor-critic section for agent collaboration-competition, specifically the maddpg miniproject.
+I originally tried to base my model after the Udacity MADDPG (Multi-Agent Deep Deterministic Policy Gradient) lessons in the multi-agent actor-critic section for agent collaboration-competition, specifically the maddpg miniproject, however, I had issues with getting this to run with more than 3 non-zero rallies, so after looking on the web a several approaches, I decided to abandon the MADDPG framework (which was mainly for a custom environment setup) and work with a list of 2 of the DDPG Agents from the P2 / bipedal examples (I found the P2 to be most useful)
 
-We also used elements of our P2 project as a good starting place and we obtained good help on this from 
+Based on the solutions below, which were quite simple but with large networks, I decided to simplify things (but leave the hooks in to show what I tried) and my approach is slightly different. 
+
+https://github.com/Nathan1123/P3_Collaboration_and_Competition
+
+https://github.com/ainvyu/p3-collab-compet
+
 https://github.com/xkiwilabs/DDPG-using-PyTorch-and-ML-Agents
 by Mike Richardson
 with the note at the top of the python files:
@@ -81,55 +86,33 @@ Project for Udacity Danaodgree in Deep Reinforcement Learning (DRL)
 Code Expanded and Adapted from Code provided by Udacity DRL Team, 2018.
 """
 
-********************************************************************************************************************************************
-We focused on the multi-agent aspects of his solution in the agents class to help us with our error message.
 
-Based on these papers and example tools, we decided to modify the DDPG based on the lessons, the benchmark implementation discussion, and the "Distributed Distributional Deterministic Policy Gradients" paper to include 
-1) Single Replay buffer for potentially multiple distributed parallel actors
-2) soft updates
-3) target networks for both the critic and policy when forming the regression target.
 
-We were also interested in including the following based on the papers we read but in the end they weren't required:
-1) N-step sampling 
-2) clipped gradient
-3) wait c steps before updating the actor and critic networks
-
-The DDPG allows learning to occur with a fixed set of weights and then updating the weights in the other sets, and then once the training is done, it then updates the fixed weights NN and starts again. This tends to avoid overtuning/overfitting.
-********************************************************************************************************************************************
 
 
 ## APPROACH
-********************************************************************************************************************************************
 --> UPDATE: We started with the default (intial) values for the previous DDPG. 
 
 The two included python files are ddpg_model.py, which contains the DDPG implementation (only seen by the agent) from DDPG, and ddpg_agent.py, which contains the Agent class as well as a supporting ReplayBuffer class to store the experiences in tuples for use by the DDPG.
 
+We create two separate nistances of the ddpg_agents and loop through them in the processing, looking for max of their scores
+
 The NN is composed of 3 fully connected layers with two NN internal sizes (defaults: fc1_size=64 and fc2_size=64) using RELU activation functions along with an initial state_size and a final action_size to map into the reachers input (state) and output (action) environment. The DDPG has an __init__ function to be invoked on class creation and the forward method using the NN's to convert the current state into an action.
 
-Here we used the same structure we had for the DDPG for the pendulum problem, but based on the paper comments we reduced the size of the layers to 256 and 128, respectively.
+Here we used the same structure we had for the DDPG for the pendulum problem, but based on the paper comments we reduced the size of the layers to 20 and 40, respectively, after some suggestions from corporate folks who had done it previously
+
+Based on suggestions from outside sources (corporate) we tried adding noise to both the weights in the network and in the states as well as to the action. We also tried batch normalization, dropouts, etc but none of these seemed effective.
 
 
-### Agent: the initial agent solution used in the DDPG mini project was used as-is with the following Hyperparamters:
-Buffer size: 100,000
-BATCH_SIZE = 128        # minibatch size
-GAMMA = 0.99            # discount factor
-TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 1e-4         # learning rate of the actor 
-LR_CRITIC = 1e-3        # learning rate of the critic
-WEIGHT_DECAY = 0        # L2 weight decay
-batch size: 64
-
-This resulted in no apparent gain in performance with average score less than 1. As a result we decreased the critic weighting to match that of the actor and reran
 
 ### Agent: the final agent solution used in the DDPG mini project decreased the LR_CRITIC by a factor of 10 
 Buffer size: 100,000
-BATCH_SIZE = 128        # minibatch size
-GAMMA = 0.99            # discount factor
-TAU = 1e-3              # for soft update of target parameters
+BATCH_SIZE = 16        # minibatch size
+GAMMA = 0.8            # discount factor
+TAU = 1e-2              # for soft update of target parameters
 LR_ACTOR = 1e-4         # learning rate of the actor 
-LR_CRITIC = 1e-4        # learning rate of the critic
+LR_CRITIC = 1e-3        # learning rate of the critic
 WEIGHT_DECAY = 0        # L2 weight decay
-batch size: 64
 
 The Agent class itself is composed of an __init__ fuction for construction, which creates the two actor-critic networks, one that is local and one that is the target network, along with the optimizer and memory buffer from the ReplayBuffer class to store experiences and a noise source (Orstein-Uhlenbeck, from the original DDPG mini-project) class as well. 
 
@@ -137,19 +120,21 @@ The Agent step method adds the current experience into the memory buffer for eac
 
 The Agent act method returns actions for a given state given current policy. When it is not learning (no_grad()) it retrieves the actions for each actor from the local (actor) network and the current states. It does this by evaluating (eval) the local actor network, get new actions from the local network, train the local network if applicable, and finally select actions with noise.
 
-The Agent learn method was the one for which we had to provide the appropriate solutions previously with the DDPG mini-project and is essentially unchanged. Here we unpack the tuple experiences into states, actions, rewards, next_states, and dones. The next_states are used in the target (NOT local) qnetwork to get the next target actions. These are then detached from the resulting tensor to make a true copy, access Qtable for the next action, and hence the rewards of the target network. We then get the next action results from the local network and then determine the MSE loss between the target and local network fits. We then zero_grad the optimizer, propagate the loss backwards through the network, and perform a step in the optimizer. Finally a soft update is performed on the target network, using TAU times the local network parameters and (1-TAU) times the target network parameters to update the target network parameters.
+The Agent learn method was the one for which we had to provide the appropriate solutions previously with the DDPG P2 project, but with two instances in a list and one memory location. Here we unpack the tuple experiences into states, actions, rewards, next_states, and dones. The next_states are used in the target (NOT local) qnetwork to get the next target actions. These are then detached from the resulting tensor to make a true copy, access Qtable for the next action, and hence the rewards of the target network. We then get the next action results from the local network and then determine the MSE loss between the target and local network fits. We then zero_grad the optimizer, propagate the loss backwards through the network, and perform a step in the optimizer. Finally a soft update is performed on the target network, using TAU times the local network parameters and (1-TAU) times the target network parameters to update the target network parameters.
 
 As indicated the original DDPG, the agent has a helper class ReplayBuffer, with methods add, to add experiences to the buffer, and sample, to sample experiences from the buffer, and is used extensively in the step method for the Agent class.
 
+# TO REVIEW:
 Originally we expected to look at some of the post-DDPG example approaches, especially the N-step, clipping and, based on the the background lesson, to wait for C epsisodes before updating in the critic network. However since these were mainly modifications of the internal workings of the agents and the like, we felt that it was best to first get the baseline DDPG running and then see if there are problems about possibly making these modifications. 
 
 So we start with our original agent and model, which we've imported locally and import the (slightly modified) DDPG function for the unity setup, and this was found to be sufficient for this exercise.
-********************************************************************************************************************************************
+# END TO REVIEW:
 
 # Running the model
-********************************************************************************************************************************************
+
 To run the code, download my entire repository onto your local drive, which includes the Reacher.zip file that you'll want to unpack locally, and copy the Reacher.exe into the project top folder for the self-contained unity environment. You will probably want to make sure you have a recent version of MS Visual Studios (2017 to 2022 seemed to be OK) and use your Anaconda powershell to create the drlnd anaconda environment, if you haven't already from the first project. In Anaconda,  click on the "Applications on " pull-down menu and select your newly created drlnd environment (drlnd) and once that loads then launch the Jupyter notebook from that particular environment. 
 
+# TO REVIEW:
 Once in the notebook, you'll want to go the the kernel and at the bottom change your kernel from python to your newly created drlnd. At this point you are ready to run the notebook.
 
 At this point I usually select restart and run all to make sure all the cells will run without interruptions.
@@ -166,12 +151,11 @@ Final Episode 118	Final Average Score: 33.23
 
 and when re-ran the weights for a single run got a score of 38.9:
 current mean score: 38.91899913009256
-
-********************************************************************************************************************************************
+# END TO REVIEW:
 
 
 ## FUTURE IMPROVEMENTS
-********************************************************************************************************************************************
+# TO REVIEW:
 As mentioned above we believe probably the greatest improvement will come from an N-step implementation:
 1) N-step sampling 
 Since this could provide information on longer-term solutions earlier
@@ -188,13 +172,13 @@ Another possible impact would be to hold for a certain number steps (C) before u
 
 We don't think clipping the gradient appears to have much impact as we don't seem to be falling off a cliff while learning, but this would be another area to look
 2) clipped gradient
-********************************************************************************************************************************************
+# END TO REVIEW:
 
 
 
 # REFERENCES
 ##### Basic
-********************************************************************************************************************************************
+# TO REVIEW:
 
 "Deep Reinforcement Learning: Pong from Pixels"
 http://karpathy.github.io/2016/05/31/rl/
@@ -228,5 +212,5 @@ https://github.com/xkiwilabs/DDPG-using-PyTorch-and-ML-Agents
 ##### D4PG
 Article: "DISTRIBUTED DISTRIBUTIONAL DETERMINISTIC POLICY GRADIENTS",by Barth-Maron, 2018
 https://openreview.net/pdf?id=SyZipzbCb
-********************************************************************************************************************************************
+# END TO REVIEW:
 

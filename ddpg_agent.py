@@ -49,10 +49,36 @@ WEIGHT_DECAY = 0        # L2 weight decay
 #UPDATE_EVERY = 7        # How often to update the network
 #UPDATE_EVERY = 4        # How often to update the network
 #UPDATE_EVERY = 6        # How often to update the network
-UPDATE_EVERY = 5        # How often to update the network
-TIMES_UPDATE = 1        # How many times to learn each update
+UPDATE_EVERY=10
+#UPDATE_EVERY=20
+#UPDATE_EVERY=5
+UPDATES_PER_STEP=10
+#UPDATES_PER_STEP=5
+#UPDATES_PER_STEP=20
+#UPDATES_PER_STEP=5
+#UPDATES_PER_STEP=8
+#UPDATES_PER_STEP=15
+LEARN_START = 0
+#TIMES_UPDATE = 1        # How many times to learn each update
 #TIMES_UPDATE = 2        # How many times to learn each update
 #TIMES_UPDATE = 5        # How many times to learn each update
+
+## KAE 4/14/2022: These currently do nothing.....
+#EPSILON_MIN = 0.1
+#EPSILON_MAX = float(1.0)
+#EPSILON_DECAY = float(1.0)
+
+#NOISE_MU = 0.0
+#NOISE_THETA = 0.15
+#NOISE_SIGMA = 0.2
+
+NOISE_MU = 0.0
+NOISE_THETA = 0.15
+#NOISE_SIGMA = 0.2
+NOISE_SIGMA = 0.1 # better than 0.2
+#NOISE_SIGMA = 0.05 # really bad
+#NOISE_SIGMA = 0.15
+#NOISE_SIGMA = 0.075
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -69,7 +95,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class DDPGAgent():
     """Interacts with and learns from the environment."""
     memory = None # shared memory for both agents
-    def __init__(self, state_size, action_size, num_agents, random_seed, \
+    def __init__(self, state_size, action_size, num_instance, random_seed, \
         lr_actor=1.0e-4, lr_critic=1.0e-3, tau=1.0e-3, gamma=0.99):
         """Initialize an Agent object.
         
@@ -85,12 +111,13 @@ class DDPGAgent():
         # save state, action and number of agent sizes along with our initial seed
         self.state_size = state_size
         self.action_size = action_size
-        self.num_agents = num_agents
+        self.num_instance = num_instance
         self.seed = random.seed(random_seed)
 #        self.lr_actor = lr_actor
 #        self.lr_critic = lr_critic
         self.tau = tau
         self.gamma = gamma
+#        self.epsilon = float(EPSILON_MAX)
 #        # KAE 4/13/2022, we'll bring these out if this looks promissing...
 #        self.noise_amp = 0.1
 #        self.noise_reduction = 0.9999
@@ -111,7 +138,18 @@ class DDPGAgent():
         print('DDPG Agent.init, BATCH_SIZE:',BATCH_SIZE)
         print('DDPG Agent.init, WEIGHT_DECAY:',WEIGHT_DECAY)
         print('DDPG Agent.init, UPDATE_EVERY:',UPDATE_EVERY)
-        print('DDPG Agent.init, TIMES_UPDATE:',TIMES_UPDATE)
+        print('DDPG Agent.init, UPDATES_PER_STEP:',UPDATES_PER_STEP)
+        print('DDPG Agent.init, LEARN_START:',LEARN_START)
+#        print('DDPG Agent.init, TIMES_UPDATE:',TIMES_UPDATE)
+        print('DDPG Agent.init, NOISE_MU:',NOISE_MU)
+        print('DDPG Agent.init, NOISE_THETA:',NOISE_THETA)
+        print('DDPG Agent.init, NOISE_SIGMA:',NOISE_SIGMA)
+#        print('DDPG Agent.init, EPSILON_MIN:',EPSILON_MIN)
+#        print('DDPG Agent.init, EPSILON_MAX:',EPSILON_MAX)
+#        print('DDPG Agent.init, EPSILON_DECAY:',EPSILON_DECAY)
+#EPSILON_MIN = 0.1
+#EPSILON_MAX = 1.0
+#EPSILON_DECAY = 1.0
 #        print('DDPG Agent.init, nosie_amp:',self.noise_amp)
 #        print('DDPG Agent.init, noise_reduction:',self.noise_reduction)
         
@@ -126,10 +164,10 @@ class DDPGAgent():
 # this slowly decreases to 0
 #        noise = 2.0 # = sigma, but for now leave at default of 0.2
 #        noise_reduction = 0.9999 # this would require some kind of reset of the sigma value each timestep, function to be called
-        if self.num_agents == 1:
-            self.noise = OUNoise(action_size, random_seed)
+        if self.num_instance == 1:
+            self.noise = OUNoise(action_size, random_seed, mu=NOISE_MU, theta=NOISE_THETA, sigma=NOISE_SIGMA)
         else:
-            self.noise = OUNoise((num_agents, action_size), random_seed)
+            self.noise = OUNoise((num_instance, action_size), random_seed, mu=NOISE_MU, theta=NOISE_THETA, sigma=NOISE_SIGMA)
 
         # Replay memory, shared between all DDPGAgents....
         if DDPGAgent.memory == None:
@@ -147,30 +185,29 @@ class DDPGAgent():
         # KAE 3/18/2022: this is the key area where we have to read in all the agents together and then
         #  add them into our buffer separately
         # Save experience / reward for each agent
-        if self.num_agents == 1:
+        if self.num_instance == 1:
 #            DDPGAgent.memory.add(states, actions, rewards, 
 #                            next_states, dones)
             self.memory.add(states, actions, rewards, 
                             next_states, dones)
         else:
-            for agent in range(self.num_agents):
+            for agent in range(self.num_instance):
 # help was provided from https://github.com/xkiwilabs/DDPG-using-PyTorch-and-ML-Agents
 #    add each tuple set (state, action, reward, next_state, done) to the memory buffer
-#                DDPGAgent.memory.add(states[agent,:], actions[agent,:], rewards[agent], 
-#                            next_states[agent,:], dones[agent])
                 self.memory.add(states[agent,:], actions[agent,:], rewards[agent], 
                             next_states[agent,:], dones[agent])
-        self.t_step = (self.t_step + 1) % UPDATE_EVERY
+    
 
         # Learn, if enough samples are available in memory
-#        if len(DDPGAgent.memory) > BATCH_SIZE:
+        if len(self.memory) > LEARN_START:
+            self.t_step = (self.t_step + 1) % UPDATE_EVERY
         # after some exploration from Nathn1123, we added the t_step abitly to push off on the timesteps as well....
-#        if len(DDPGAgent.memory) > BATCH_SIZE and self.t_step == 0:
-        if len(self.memory) > BATCH_SIZE and self.t_step == 0:
+#            if len(self.memory) > BATCH_SIZE and self.t_step == 0:
+            if self.t_step == 0:
 #            print('In DDPGAgent.step random sampling, len_memory:',len(DDPGAgent.memory))
-            for i in range(TIMES_UPDATE):
-                experiences = self.memory.sample()
-                self.learn(experiences, self.gamma) # our learn includes the soft update of the networks....
+                for i in range(UPDATES_PER_STEP):
+                    experiences = self.memory.sample()
+                    self.learn(experiences, self.gamma) # our learn includes the soft update of the networks....
 #                estates, eactions, erewards, enext_states, edones = experiences
 #                print('\nIn DDPGAgent.step, type_estates:', type(estates))
 #                print('\nIn DDPGAgent.step, size_estates:', 
@@ -186,12 +223,12 @@ class DDPGAgent():
         with torch.no_grad():
 # help was provided from https://github.com/xkiwilabs/DDPG-using-PyTorch-and-ML-Agents
 #    for each agent get an action from the local (actor) network given the individual states
-            if self.num_agents == 1:
-                actions = np.zeros(self.action_size)
+            if self.num_instance == 1:
+#                actions = np.zeros(self.action_size)
                 actions = self.actor_local(states).cpu().data.numpy()
             else:
-                actions = np.zeros((self.num_agents, self.action_size))
-                for agent in range(self.num_agents):
+                actions = np.zeros((self.num_instance, self.action_size))
+                for agent in range(self.num_instance):
                     actions[agent,:] = self.actor_local(states[agent,:]).cpu().data.numpy()
         self.actor_local.train()
 #        add_noise = False
@@ -242,6 +279,7 @@ class DDPGAgent():
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        # KAE 4/12/22: added by Norm1123 but not by my second solution, leavinig it in
         torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(),1)
         self.critic_optimizer.step()
 
@@ -256,7 +294,10 @@ class DDPGAgent():
 
         # ----------------------- update target networks ----------------------- #
         self.soft_update(self.critic_local, self.critic_target, self.tau)
-        self.soft_update(self.actor_local, self.actor_target, self.tau)                     
+        self.soft_update(self.actor_local, self.actor_target, self.tau)  
+        
+#        print(type(self.epsilon), type(EPSILON_DECAY), type(EPSILON_MIN))
+#        self.epsilon = np.max([self.epsilon * EPSILON_DECAY,EPSILON_MIN])
 #        print('In DDPGAgent.learn, len_experiences, s, a, r, ns, d:',
 #              len(experiences),states.size(),actions.size(),rewards.size(),next_states.size(),dones.size())
 

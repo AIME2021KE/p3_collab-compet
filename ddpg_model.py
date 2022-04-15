@@ -14,13 +14,32 @@ def hidden_init(layer):
     lim = 1. / np.sqrt(fan_in)
     return (-lim, lim)
 
-
+#DEFAULT_FC1_ACTOR = 128
+#DEFAULT_FC2_ACTOR = 256
+#DEFAULT_FC1_ACTOR = 64
+#DEFAULT_FC2_ACTOR = 128
+#DEFAULT_FC1_ACTOR = 48
+#DEFAULT_FC2_ACTOR = 96
+#DEFAULT_FC1_ACTOR = 20
+#DEFAULT_FC2_ACTOR = 40
+DEFAULT_FC1_ACTOR = 20
+DEFAULT_FC2_ACTOR = 20
+#DEFAULT_FC1_ACTOR = 32
+#DEFAULT_FC2_ACTOR = 64
+DEFAULT_FC1_CRITIC = DEFAULT_FC1_ACTOR
+DEFAULT_FC2_CRITIC = DEFAULT_FC2_ACTOR
+#DEFAULT_FC1_ACTOR = 400
+#DEFAULT_FC2_ACTOR = 300
+#DEFAULT_FC1_CRITIC = 400
+#DEFAULT_FC2_CRITIC = 300
 
 class Actor(nn.Module):
     """Actor (Policy) Model."""
 
-    def __init__(self, state_size, action_size, seed, fc1_units=32, fc2_units=64, \
-        momentum=0.1):
+    def __init__(self, state_size, action_size, seed, fc1_units=DEFAULT_FC1_ACTOR, \
+                 fc2_units=DEFAULT_FC2_ACTOR, momentum=0.1):
+#    def __init__(self, state_size, action_size, seed, fc1_units=32, fc2_units=64, \
+#        momentum=0.1):
         """Initialize parameters and build model.
         Params
         ======
@@ -37,6 +56,7 @@ class Actor(nn.Module):
         self.fc1_units = fc1_units
         self.fc2_units = fc2_units
         self.momentum = momentum # don't think we need it except in init, however
+        
         self.seed = torch.manual_seed(seed)
         self.fc1 = nn.Linear(state_size, fc1_units)
         # KAE 4/11/2022: suggested by corporate liason J.Poczatek 
@@ -44,14 +64,20 @@ class Actor(nn.Module):
         #  KAE 4/12/2022: OK getting 2D/3D but got 1D errors 
         #  with batch norm, which is a new addition.
         #  try removing it....
-        print('Actor BatchNorm1d on, init....')
-        self.norm1d = nn.BatchNorm1d(fc1_units, momentum=momentum)
+        self.do_batchnorm = False
+        if self.do_batchnorm:
+            print('Actor BatchNorm1d on, init....')
+            self.norm1d = nn.BatchNorm1d(fc1_units, momentum=momentum)
+            
         self.fc2 = nn.Linear(fc1_units, fc2_units)
         self.fc3 = nn.Linear(fc2_units, action_size)
+        self.do_dropout = False
+        if self.do_dropout:
 #        self.pdrop = 0.25
-#        self.pdrop = 0.05
+            self.pdrop = 0.05
 #        self.pdrop = 0.00
-#        self.dropout = nn.Dropout(p=self.pdrop)
+            self.dropout = nn.Dropout(p=self.pdrop)
+    
         self.reset_parameters()
         
         self.add_weight_noise = False
@@ -118,20 +144,21 @@ class Actor(nn.Module):
 #            self.add_noise_to_weights(self.fc3.weight)
 
         x = self.fc1(state)            
-        if self.add_state_noise:
-            self.add_noise_to_states(x)
-#        x = self.dropout(x)
-        x = x.view(-1,self.fc1_units)
-        x = self.norm1d(x)
-        x = F.relu(x)
-        x = self.fc2(x)
-#        x = self.dropout(x)
-        if self.add_state_noise:
-            self.add_noise_to_states(x)
-        x = F.relu(x)
-        x  = self.fc3(x)
 #        if self.add_state_noise:
 #            self.add_noise_to_states(x)
+#        if self.do_dropout:
+#            x = self.dropout(x)
+#        if self.do_batchnorm:
+#            x = x.view(-1,self.fc1_units)
+#            x = self.norm1d(x)
+        x = F.relu(x)
+        x = self.fc2(x)
+#        if self.do_dropout:
+#            x = self.dropout(x)
+#        if self.add_state_noise:
+#            self.add_noise_to_states(x)
+        x = F.relu(x)
+        x  = self.fc3(x)
         return F.tanh(x)
     
     def update_noise(self):
@@ -167,8 +194,8 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     """Critic (Value) Model."""
 
-    def __init__(self, state_size, action_size, seed, fc1_units=32, fc2_units=64, \
-        momentum=0.1):
+    def __init__(self, state_size, action_size, seed, fc1_units=DEFAULT_FC1_CRITIC, \
+                 fc2_units=DEFAULT_FC1_CRITIC, momentum=0.1):
         """Initialize parameters and build model.
         Params
         ======
@@ -192,13 +219,20 @@ class Critic(nn.Module):
         #  KAE 4/12/2022: OK getting 2D/3D but got 1D errors 
         #  with batch norm, which is a new addition.
         #  try removing it....
-        print('Critic BatchNorm1d on, init....')
-        self.norm1d = nn.BatchNorm1d(fc1_units, momentum=momentum)
+        
+        self.do_batchnorm = False
+        if self.do_batchnorm:
+            print('Critic BatchNorm1d on, init....')
+            self.norm1d = nn.BatchNorm1d(fc1_units, momentum=momentum)
+            
         self.fc2 = nn.Linear(fc1_units+action_size, fc2_units)
         self.fc3 = nn.Linear(fc2_units, 1)
         self.reset_parameters()
-        self.pdrop = 0.25
-        self.dropout = nn.Dropout(p=self.pdrop)
+        
+        self.do_dropout = False
+        if self.do_dropout:
+            self.pdrop = 0.25
+            self.dropout = nn.Dropout(p=self.pdrop)
         
 #        self.add_weight_noise = True
 #        self.noise_amp = 0.1
@@ -220,15 +254,18 @@ class Critic(nn.Module):
 #            self.add_noise_to_weights(self.fc2.weight)
 ##            self.add_noise_to_weights(self.fc3.weight)
         xs = self.fc1(state)
-#        xs = self.dropout(xs)
+#        if self.do_dropout:
+#            xs = self.dropout(xs)
 #        if self.add_state_noise:
 #            self.add_noise_to_states(xs)
-        xs = xs.view(-1,self.fc1_units)
-        xs = self.norm1d(xs)
+#        if self.do_batchnorm:
+#            xs = xs.view(-1,self.fc1_units)
+#            xs = self.norm1d(xs)
         xs = F.relu(xs)
         x = torch.cat((xs, action), dim=1)
         x = self.fc2(x)
-#        x = self.dropout(x)
+#        if self.do_dropout:
+#            x = self.dropout(x)
 #        if self.add_state_noise:
 #            self.add_noise_to_states(x)
         x = F.relu(x)
