@@ -37,10 +37,12 @@ import torch.optim as optim
 #  exceeding the training score in just under 120 episodes
 # https://github.com/xkiwilabs/DDPG-using-PyTorch-and-ML-Agents
 BUFFER_SIZE = int(1e5)  # replay buffer size
-#BATCH_SIZE = 128        # minibatch size
+BATCH_SIZE = 128        # minibatch size
+#BATCH_SIZE = 256        # minibatch size
+#BATCH_SIZE = 256        # minibatch size
 #BATCH_SIZE = 64         # minibatch size
 #BATCH_SIZE = 32         # minibatch size
-BATCH_SIZE = 16         # minibatch size
+#BATCH_SIZE = 16         # minibatch size
 #BATCH_SIZE = 8         # minibatch size
 WEIGHT_DECAY = 0        # L2 weight decay
 #UPDATE_EVERY = 20        # How often to update the network
@@ -203,7 +205,7 @@ class DDPGAgent():
             self.t_step = (self.t_step + 1) % UPDATE_EVERY
         # after some exploration from Nathn1123, we added the t_step abitly to push off on the timesteps as well....
 #            if len(self.memory) > BATCH_SIZE and self.t_step == 0:
-            if self.t_step == 0:
+            if self.t_step == 0 and len(self.memory) > BATCH_SIZE:
 #            print('In DDPGAgent.step random sampling, len_memory:',len(DDPGAgent.memory))
                 for i in range(UPDATES_PER_STEP):
                     experiences = self.memory.sample()
